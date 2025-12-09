@@ -1,25 +1,46 @@
 import streamlit as st
-from data_source import get_data
 import plotly.express as px
+from data_source import get_data
 
 st.title("🔍 Signal Scanner")
 
-# Load signal data
 df = get_data("Signals")
 
-st.subheader("All Signals")
-st.dataframe(df, use_container_width=True)
+if df.empty:
+    st.error("No signal data found.")
+    st.stop()
 
-# High-Confidence Signals
-st.markdown("### ⚡ High-Confidence Signals")
-high_conf = df[df["Confidence"] > 0.85]
+# Summary
+st.markdown(f"### Showing {len(df)} signals across {df['Symbol'].nunique()} symbols")
 
-if not high_conf.empty:
-    st.success(f"{len(high_conf)} high-confidence signals found")
-    st.table(high_conf)
-else:
-    st.info("No signals above confidence threshold.")
+# Filters
+col1, col2 = st.columns(2)
+symbol = col1.selectbox("Select Symbol", df["Symbol"].unique())
+min_conf = col2.slider("Minimum Confidence", 0.0, 1.0, 0.8, 0.01)
+filtered = df[(df["Symbol"] == symbol) & (df["Confidence"] >= min_conf)]
 
-# Visualization
-fig = px.bar(df, x="Type", y="Confidence", color="Type", title="Signal Confidence Levels")
+# Display filtered signals
+st.subheader("Filtered Signals")
+st.dataframe(filtered, use_container_width=True)
+
+# Summary visualization
+st.markdown("### Signal Confidence Overview")
+fig = px.bar(
+    df,
+    x="Symbol",
+    y="Confidence",
+    color="Direction",
+    barmode="group",
+    text="Type",
+    title="Signal Confidence by Symbol"
+)
+fig.update_traces(textposition="outside")
 st.plotly_chart(fig, use_container_width=True)
+
+# Highlight high-confidence signals
+high_conf = df[df["Confidence"] > 0.85]
+if not high_conf.empty:
+    st.success(f"{len(high_conf)} high-confidence signals detected.")
+    st.table(high_conf[["Symbol", "Type", "Confidence", "Direction"]])
+else:
+    st.info("No high-confidence signals at this time.")
