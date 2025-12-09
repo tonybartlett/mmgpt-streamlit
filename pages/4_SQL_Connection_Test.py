@@ -3,10 +3,10 @@ import pandas as pd
 
 st.title("🧩 SQL Connection Test")
 
-st.markdown("Reading database connection details from `.streamlit/secrets.toml`")
+st.markdown("Reading database connection details from Streamlit Cloud secrets")
 
-# ✅ Fix: Directly access the connection dictionary (not nested under ['connections'])
-secrets = st.secrets["connections.mmgpt_db"]
+# ✅ Access connection dictionary directly from secrets
+secrets = st.secrets["mmgpt_db"]
 
 # Display masked details for verification
 st.json({
