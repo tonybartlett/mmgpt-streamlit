@@ -3,10 +3,10 @@ import pandas as pd
 
 st.title("🧩 SQL Connection Test")
 
-# Securely access secrets
 st.markdown("Reading database connection details from `.streamlit/secrets.toml`")
 
-secrets = st.secrets["connections"]["mmgpt_db"]
+# ✅ Fix: Directly access the connection dictionary (not nested under ['connections'])
+secrets = st.secrets["connections.mmgpt_db"]
 
 # Display masked details for verification
 st.json({
@@ -19,4 +19,4 @@ st.json({
 st.info("✅ Connection details successfully read (password hidden).")
 
 st.markdown("---")
-st.markdown("**Next step:** We'll connect to the live database and query Supervisor_Dashboard_History.")
+st.markdown("**Next step:** We'll connect to the live database and query `Supervisor_Dashboard_History`.")
