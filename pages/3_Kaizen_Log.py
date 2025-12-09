@@ -1,12 +1,19 @@
 import streamlit as st
+from data_source import get_data
+import plotly.express as px
 
-st.title("🧠 MMGPT Kaizen Log")
-st.markdown("""
-This page will summarize your weekly system improvements —
-model upgrades, SQL fixes, and lessons learned.
-""")
+st.title("📝 Kaizen Log")
 
-with st.expander("Week 49, 2025 – Momentum Model Tuning"):
-    st.write("- Improved volatility-adjusted position sizing.")
-    st.write("- Fixed missing schema drift warnings.")
-    st.write("- Enhanced sentiment decay factor in Sentiment Engine 2.0.")
+# Load data
+df = get_data("Kaizen_Log")
+
+st.subheader("Recent Improvements")
+st.dataframe(df, use_container_width=True)
+
+# Top improvement
+top_improvement = df.loc[df["ImpactScore"].idxmax()]
+st.success(f"🏆 Top improvement: **{top_improvement['Improvement']}** (Impact Score: {top_improvement['ImpactScore']})")
+
+# Visualization
+fig = px.bar(df, x="Date", y="ImpactScore", color="Owner", title="Improvement Impact Over Time")
+st.plotly_chart(fig, use_container_width=True)
