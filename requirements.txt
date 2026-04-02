@@ -1,5 +1,7 @@
 streamlit
 pandas
 plotly
-sqlalchemy
 pyodbc
+sqlalchemy>=2.0
+requests
+python-dotenv
