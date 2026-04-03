@@ -4,7 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 import time
 from datetime import datetime, timedelta
-from data_source import get_data
+# from data_source import get_data  # not yet wired to real data
 
 # ------------------------------
 # Page Config
