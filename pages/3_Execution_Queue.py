@@ -81,6 +81,9 @@ st.subheader("Status Summary")
 df_status, status_src = get_exec_queue_status_summary(run_date_str, acct_filter)
 
 if df_status is not None and not df_status.empty:
+    # Safe int conversion — values may be strings from bridge
+    df_status["OrderCount"] = pd.to_numeric(df_status["OrderCount"], errors="coerce").fillna(0).astype(int)
+
     # Display as metrics
     status_cols = st.columns(len(df_status) + 1)
     total_orders = int(df_status["OrderCount"].sum())
@@ -115,14 +118,17 @@ df_nulls, null_status = get_exec_queue_null_check(run_date_str, acct_filter)
 
 if df_nulls is not None and not df_nulls.empty:
     n = df_nulls.iloc[0]
-    total_rows = int(n.get("ExecQRows", 0))
+    def _si(v):
+        try: return int(float(v))
+        except (ValueError, TypeError): return 0
+    total_rows = _si(n.get("ExecQRows", 0))
 
     null_cols = {
-        "TargetQty": int(n.get("NullTargetQty", 0)),
-        "StopLoss": int(n.get("NullStopLoss", 0)),
-        "TakeProfit": int(n.get("NullTakeProfit", 0)),
-        "Confidence": int(n.get("NullConfidence", 0)),
-        "Status": int(n.get("NullStatus", 0)),
+        "TargetQty": _si(n.get("NullTargetQty", 0)),
+        "StopLoss": _si(n.get("NullStopLoss", 0)),
+        "TakeProfit": _si(n.get("NullTakeProfit", 0)),
+        "Confidence": _si(n.get("NullConfidence", 0)),
+        "Status": _si(n.get("NullStatus", 0)),
     }
 
     nc = st.columns(len(null_cols) + 1)
@@ -180,7 +186,10 @@ if df_queue is not None and not df_queue.empty:
         return ""
 
     if "Status" in df_queue.columns:
-        styled = df_queue.style.applymap(_status_color, subset=["Status"])
+        # pandas 2.1+ renamed applymap() to map(); use map with applymap fallback
+        styler = df_queue.style
+        _map_fn = getattr(styler, "map", None) or getattr(styler, "applymap")
+        styled = _map_fn(_status_color, subset=["Status"])
         st.dataframe(styled, use_container_width=True, hide_index=True, height=500)
     else:
         st.dataframe(df_queue, use_container_width=True, hide_index=True, height=500)

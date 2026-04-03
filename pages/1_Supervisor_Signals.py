@@ -73,14 +73,23 @@ df_summary, summary_status = get_signal_summary(run_date_str)
 if df_summary is not None and not df_summary.empty:
     s = df_summary.iloc[0]
     m1, m2, m3, m4, m5, m6 = st.columns(6)
-    m1.metric("Total Signals", f"{int(s.get('TotalSignals', 0)):,}")
-    m2.metric("High Risk", f"{int(s.get('HighCount', 0)):,}")
-    m3.metric("Medium Risk", f"{int(s.get('MediumCount', 0)):,}")
-    m4.metric("Low Risk", f"{int(s.get('LowCount', 0)):,}")
-    avg_comp = s.get("AvgComposite", 0)
-    m5.metric("Avg Composite", f"{avg_comp:.2f}" if pd.notna(avg_comp) else "—")
-    avg_wt = s.get("AvgWeightPct", 0)
-    m6.metric("Avg Weight %", f"{avg_wt:.2f}%" if pd.notna(avg_wt) else "—")
+    def _si(v):
+        try: return int(float(v))
+        except (ValueError, TypeError): return 0
+    def _sf(v):
+        try:
+            f = float(v)
+            return f if pd.notna(f) else None
+        except (ValueError, TypeError): return None
+
+    m1.metric("Total Signals", f"{_si(s.get('TotalSignals')):,}")
+    m2.metric("High Risk", f"{_si(s.get('HighCount')):,}")
+    m3.metric("Medium Risk", f"{_si(s.get('MediumCount')):,}")
+    m4.metric("Low Risk", f"{_si(s.get('LowCount')):,}")
+    avg_comp = _sf(s.get("AvgComposite"))
+    m5.metric("Avg Composite", f"{avg_comp:.2f}" if avg_comp is not None else "—")
+    avg_wt = _sf(s.get("AvgWeightPct"))
+    m6.metric("Avg Weight %", f"{avg_wt:.2f}%" if avg_wt is not None else "—")
 else:
     st.info(f"Summary not available. ({summary_status})")
 
@@ -98,7 +107,7 @@ if df_plans is not None and not df_plans.empty:
     display_cols = {
         "RankGlobal": "Rank",
         "Ticker": "Ticker",
-        "Side": "Side",
+        "SignalSide": "Side",
         "EntryPrice": "Entry Price",
         "StopLossPrice": "Stop Loss",
         "TakeProfitPrice": "Take Profit",
@@ -147,9 +156,9 @@ if df_plans is not None and not df_plans.empty:
 
     # Apply styling
     if "Risk Band" in df_display.columns:
-        styled = df_display.style.applymap(
-            _risk_color, subset=["Risk Band"]
-        )
+        styler = df_display.style
+        _map_fn = getattr(styler, "map", None) or getattr(styler, "applymap")
+        styled = _map_fn(_risk_color, subset=["Risk Band"])
         st.dataframe(styled, use_container_width=True, hide_index=True, height=600)
     else:
         st.dataframe(df_display, use_container_width=True, hide_index=True, height=600)

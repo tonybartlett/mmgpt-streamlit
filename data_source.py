@@ -199,14 +199,22 @@ def _bridge_post(
             log.warning(err)
             return None, err
 
-        r.raise_for_status()
-        data = r.json()
+        # Parse JSON before raise_for_status so we can capture error details
+        # even from 4xx/5xx responses that have JSON bodies.
+        try:
+            data = r.json()
+        except Exception:
+            data = None
 
-        # Handle error responses from the bridge
+        # If the bridge returned a JSON error body (even with 500), use it
         if isinstance(data, dict) and data.get("status") == "error":
             err = f"Bridge error: {data.get('message', 'unknown')}"
             _last_bridge_error = err
             return None, err
+
+        # Now raise for non-JSON 4xx/5xx
+        if data is None:
+            r.raise_for_status()
 
         # Extract rows
         rows: List = data.get("rows") if isinstance(data, dict) else data
@@ -230,7 +238,13 @@ def _bridge_post(
         _last_bridge_error = err
         return None, err
     except _requests.exceptions.HTTPError as e:
-        err = f"Bridge HTTP error: {e} (body: {e.response.text[:200] if e.response else 'N/A'})"
+        body = "N/A"
+        try:
+            if e.response is not None:
+                body = e.response.text[:200]
+        except Exception:
+            pass
+        err = f"Bridge HTTP error: {e} (body: {body})"
         _last_bridge_error = err
         return None, err
     except Exception as e:
@@ -304,6 +318,10 @@ def run_stored_proc(
     if df is not None:
         return df, "Stored proc via bridge"
     if err:
+        # "No results" means the proc executed successfully but is an action proc
+        # (INSERT/UPDATE) that doesn't return a result set — treat as success.
+        if "no results" in str(err).lower() or "not a query" in str(err).lower():
+            return pd.DataFrame(), "Stored proc executed (no result set)"
         errors.append(f"bridge: {err}")
 
     # 2. Direct pyodbc fallback

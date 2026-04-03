@@ -1,8 +1,30 @@
 """
 mmgpt_queries.py — All SQL queries for the MMGPT Supervisor Streamlit dashboard.
 
-Each function returns a SQL string (or calls run_query / run_stored_proc directly
-and returns (DataFrame, status)).  Keeps SQL out of page files.
+Each function calls run_query / run_stored_proc from data_source and returns
+(DataFrame | None, status_string).  Keeps SQL out of page files.
+
+Column names verified against live database 2026-04-03:
+  Supervisor_TradePlans:  TradePlanID, RunDate, Ticker, StrategyCode, SignalSide,
+      EntryRule, EntryPrice, WeightPct, TakeProfitPrice, TakeProfitPct,
+      StopLossPrice, StopLossPct, TimeStopDate, CompositeScore, RankGlobal,
+      RiskBand, StrategyMixCategory, StrategiesHit, NumStrategies, Notes, CreatedAt
+  Supervisor_Execution_Queue:  ExecutionID, RunDate, AccountID, Strategy, Ticker,
+      Side, ReasonCode, CurrentQty, TargetQty, DeltaQty, PriceType, LimitPrice,
+      TimeInForce, StopLoss, TakeProfit, ConfidenceScore, Status, CreatedAtUTC, SentAtUTC
+  Signals_Converged:  ConvergedID, RunDate, Ticker, StrategiesHit, NumStrategies,
+      CompositeScore, RiskBand, StrategyMixCategory, RankGlobal, RankByStrategyMix,
+      MaxStrategyScore, HasTrend, CreatedAt
+  Supervisor_Dashboard_History:  AsOfDate, Strategy, ActiveRunID, Lookback, NearPct,
+      MinDollarVol, TP_Pct, SL_Pct, TimeoutDays, Trades, Wins, Losses, Timeouts,
+      WinRate, AvgReturnPct, PerfAsOf, LastPromotedAt, Trades30d, Wins30d, Losses30d,
+      Timeouts30d, AvgWinRate30d, AvgRetPct30d, RecordedAtUTC, ...
+  vwSupervisor_ControlPanel:  Strategy, AsOfDate, Trades, WinRate, AvgReturnPct,
+      WeightedWinRate7d, WeightedRetPct7d, WeightedWinRate30d, WeightedRetPct30d,
+      WeightedWinRate90d, WeightedRetPct90d
+  vwSupervisor_TopSignals:  RunDate, Ticker, StrategiesHit, NumStrategies,
+      CompositeScore, RiskBand, StrategyMixCategory, RankGlobal, RankByStrategyMix,
+      MaxStrategyScore, HasTrend
 """
 
 from __future__ import annotations
@@ -45,12 +67,14 @@ def get_pipeline_counts(run_date: str) -> Tuple[Optional[pd.DataFrame], str]:
 
 
 def get_top_signals_home(run_date: str, top_n: int = 3) -> Tuple[Optional[pd.DataFrame], str]:
-    """Top N signals by RankGlobal for the home page summary."""
+    """Top N signals by RankGlobal for the home page summary.
+    Note: Column is SignalSide (not Side) in Supervisor_TradePlans.
+    """
     sql = f"""
     SELECT TOP ({top_n})
         RankGlobal,
         Ticker,
-        Side,
+        SignalSide,
         CompositeScore,
         RiskBand,
         StrategyMixCategory,
@@ -77,12 +101,14 @@ def get_available_run_dates_converged() -> Tuple[Optional[pd.DataFrame], str]:
 
 
 def get_trade_plans(run_date: str, top_n: int = 50) -> Tuple[Optional[pd.DataFrame], str]:
-    """Top N trade plans for a given RunDate, ordered by RankGlobal."""
+    """Top N trade plans for a given RunDate, ordered by RankGlobal.
+    Uses actual column names from Supervisor_TradePlans.
+    """
     sql = f"""
     SELECT TOP ({top_n})
         RankGlobal,
         Ticker,
-        Side,
+        SignalSide,
         EntryPrice,
         StopLossPrice,
         TakeProfitPrice,
@@ -111,8 +137,8 @@ def get_signal_summary(run_date: str) -> Tuple[Optional[pd.DataFrame], str]:
         HighCount      = SUM(CASE WHEN RiskBand = 'High'   THEN 1 ELSE 0 END),
         MediumCount    = SUM(CASE WHEN RiskBand = 'Medium' THEN 1 ELSE 0 END),
         LowCount       = SUM(CASE WHEN RiskBand = 'Low'    THEN 1 ELSE 0 END),
-        AvgComposite   = AVG(CompositeScore),
-        AvgWeightPct   = AVG(WeightPct)
+        AvgComposite   = AVG(CAST(CompositeScore AS FLOAT)),
+        AvgWeightPct   = AVG(CAST(WeightPct AS FLOAT))
     FROM dbo.Supervisor_TradePlans
     WHERE RunDate = '{run_date}';
     """
@@ -147,7 +173,12 @@ def get_control_panel() -> Tuple[Optional[pd.DataFrame], str]:
 def get_dashboard_history(days: int = 90) -> Tuple[Optional[pd.DataFrame], str]:
     """Daily history rows for the last N days."""
     sql = f"""
-    SELECT *
+    SELECT
+        AsOfDate,
+        Strategy,
+        Trades,
+        WinRate,
+        AvgReturnPct
     FROM dbo.Supervisor_Dashboard_History
     WHERE AsOfDate >= DATEADD(DAY, -{days}, GETDATE())
     ORDER BY AsOfDate ASC, Strategy ASC;
@@ -160,9 +191,9 @@ def get_performance_summary() -> Tuple[Optional[pd.DataFrame], str]:
     sql = """
     SELECT
         TotalStrategies = COUNT(DISTINCT Strategy),
-        TotalTrades     = SUM(Trades),
-        AvgWinRate      = AVG(WinRate),
-        AvgReturnPct    = AVG(AvgReturnPct)
+        TotalTrades     = SUM(CAST(Trades AS BIGINT)),
+        AvgWinRate      = AVG(CAST(WinRate AS FLOAT)),
+        AvgReturnPct    = AVG(CAST(AvgReturnPct AS FLOAT))
     FROM dbo.Supervisor_Dashboard_History
     WHERE AsOfDate = (SELECT MAX(AsOfDate) FROM dbo.Supervisor_Dashboard_History);
     """
@@ -182,8 +213,13 @@ def get_latest_exec_run_date() -> Tuple[Optional[pd.DataFrame], str]:
     return run_query(sql)
 
 
-def get_execution_queue(run_date: str, account_id: Optional[str] = None) -> Tuple[Optional[pd.DataFrame], str]:
-    """Execution queue for a given RunDate, optionally filtered by AccountID."""
+def get_execution_queue(
+    run_date: str,
+    account_id: Optional[str] = None,
+) -> Tuple[Optional[pd.DataFrame], str]:
+    """Execution queue for a given RunDate, optionally filtered by AccountID.
+    Uses actual column names from Supervisor_Execution_Queue.
+    """
     where = f"WHERE e.RunDate = '{run_date}'"
     if account_id and account_id != "All":
         safe_id = account_id.replace("'", "''")
@@ -191,12 +227,16 @@ def get_execution_queue(run_date: str, account_id: Optional[str] = None) -> Tupl
 
     sql = f"""
     SELECT
+        e.ExecutionID,
         e.RunDate,
         e.AccountID,
         e.Strategy,
         e.Ticker,
         e.Side,
+        e.ReasonCode,
         e.TargetQty,
+        e.DeltaQty,
+        e.PriceType,
         e.StopLoss,
         e.TakeProfit,
         e.ConfidenceScore,
@@ -219,7 +259,10 @@ def get_account_ids(run_date: str) -> Tuple[Optional[pd.DataFrame], str]:
     return run_query(sql)
 
 
-def get_exec_queue_null_check(run_date: str, account_id: Optional[str] = None) -> Tuple[Optional[pd.DataFrame], str]:
+def get_exec_queue_null_check(
+    run_date: str,
+    account_id: Optional[str] = None,
+) -> Tuple[Optional[pd.DataFrame], str]:
     """Null-check summary for execution queue data quality."""
     where_clause = f"WHERE RunDate = '{run_date}'"
     if account_id and account_id != "All":
@@ -229,18 +272,21 @@ def get_exec_queue_null_check(run_date: str, account_id: Optional[str] = None) -
     sql = f"""
     SELECT
         ExecQRows      = COUNT(*),
-        NullTargetQty  = SUM(CASE WHEN TargetQty  IS NULL THEN 1 ELSE 0 END),
-        NullStopLoss   = SUM(CASE WHEN StopLoss   IS NULL THEN 1 ELSE 0 END),
-        NullTakeProfit = SUM(CASE WHEN TakeProfit  IS NULL THEN 1 ELSE 0 END),
-        NullConfidence = SUM(CASE WHEN ConfidenceScore IS NULL THEN 1 ELSE 0 END),
-        NullStatus     = SUM(CASE WHEN [Status]    IS NULL THEN 1 ELSE 0 END)
+        NullTargetQty  = SUM(CASE WHEN TargetQty       IS NULL THEN 1 ELSE 0 END),
+        NullStopLoss   = SUM(CASE WHEN StopLoss        IS NULL THEN 1 ELSE 0 END),
+        NullTakeProfit = SUM(CASE WHEN TakeProfit       IS NULL THEN 1 ELSE 0 END),
+        NullConfidence = SUM(CASE WHEN ConfidenceScore  IS NULL THEN 1 ELSE 0 END),
+        NullStatus     = SUM(CASE WHEN [Status]         IS NULL THEN 1 ELSE 0 END)
     FROM dbo.Supervisor_Execution_Queue
     {where_clause};
     """
     return run_query(sql)
 
 
-def get_exec_queue_status_summary(run_date: str, account_id: Optional[str] = None) -> Tuple[Optional[pd.DataFrame], str]:
+def get_exec_queue_status_summary(
+    run_date: str,
+    account_id: Optional[str] = None,
+) -> Tuple[Optional[pd.DataFrame], str]:
     """Status breakdown for execution queue."""
     where_clause = f"WHERE RunDate = '{run_date}'"
     if account_id and account_id != "All":

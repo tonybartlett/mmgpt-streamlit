@@ -145,12 +145,15 @@ if run_date_str:
     df_counts, counts_status = get_pipeline_counts(run_date_str)
     if df_counts is not None and not df_counts.empty:
         r = df_counts.iloc[0]
+        def _si(v):
+            try: return int(float(v))
+            except (ValueError, TypeError): return 0
         c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Signals Inbox",  f"{int(r.get('InboxCount',      0)):,}")
-        c2.metric("Converged",      f"{int(r.get('ConvergedCount',  0)):,}")
-        c3.metric("Trade Plans",    f"{int(r.get('TradePlanCount',  0)):,}")
-        c4.metric("Exec Queue",     f"{int(r.get('QueueCount',      0)):,}")
-        c5.metric("Dispatched",     f"{int(r.get('DispatchedCount', 0)):,}")
+        c1.metric("Signals Inbox",  f"{_si(r.get('InboxCount',      0)):,}")
+        c2.metric("Converged",      f"{_si(r.get('ConvergedCount',  0)):,}")
+        c3.metric("Trade Plans",    f"{_si(r.get('TradePlanCount',  0)):,}")
+        c4.metric("Exec Queue",     f"{_si(r.get('QueueCount',      0)):,}")
+        c5.metric("Dispatched",     f"{_si(r.get('DispatchedCount', 0)):,}")
     else:
         st.warning(f"Could not load pipeline counts. ({counts_status})")
 
@@ -163,7 +166,7 @@ if run_date_str:
         for _, sig in df_top.iterrows():
             rank    = sig.get("RankGlobal", "—")
             ticker  = sig.get("Ticker", "—")
-            side    = sig.get("Side", "—")
+            side    = sig.get("SignalSide", "—")
             score   = sig.get("CompositeScore", 0)
             risk    = sig.get("RiskBand", "—")
             mix     = sig.get("StrategyMixCategory", "—")
@@ -175,7 +178,11 @@ if run_date_str:
             cols[0].markdown(f"**#{rank}**")
             cols[1].markdown(f"**{ticker}**")
             cols[2].markdown(str(side))
-            cols[3].markdown(f"Score: {score:.2f}" if isinstance(score, float) else f"Score: {score}")
+            try:
+                score_f = float(score)
+                cols[3].markdown(f"Score: {score_f:.1f}")
+            except (ValueError, TypeError):
+                cols[3].markdown(f"Score: {score}")
             cols[4].markdown(f"{risk_icon} {risk}")
             cols[5].markdown(str(mix))
             cols[6].markdown(f"{n_strat} strategies")

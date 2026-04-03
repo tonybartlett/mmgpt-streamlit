@@ -57,14 +57,32 @@ df_perf, perf_status = get_performance_summary()
 if df_perf is not None and not df_perf.empty:
     p = df_perf.iloc[0]
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Total Strategies", f"{int(p.get('TotalStrategies', 0)):,}")
-    k2.metric("Total Trades", f"{int(p.get('TotalTrades', 0)):,}")
+    def _safe_int(val, default=0):
+        if val is None:
+            return default
+        try:
+            return int(float(val))
+        except (ValueError, TypeError):
+            return default
 
-    avg_wr = p.get("AvgWinRate", 0)
-    k3.metric("Avg Win Rate", f"{avg_wr:.1f}%" if pd.notna(avg_wr) else "—")
+    k1.metric("Total Strategies", f"{_safe_int(p.get('TotalStrategies')):,}")
+    k2.metric("Total Trades", f"{_safe_int(p.get('TotalTrades')):,}")
 
-    avg_ret = p.get("AvgReturnPct", 0)
-    k4.metric("Avg Return %", f"{avg_ret:.2f}%" if pd.notna(avg_ret) else "—")
+    # Safe float conversion — values may arrive as str, None, or NaN from bridge
+    def _safe_float(val, default=None):
+        if val is None:
+            return default
+        try:
+            f = float(val)
+            return f if pd.notna(f) else default
+        except (ValueError, TypeError):
+            return default
+
+    avg_wr = _safe_float(p.get("AvgWinRate"))
+    k3.metric("Avg Win Rate", f"{avg_wr:.1f}%" if avg_wr is not None else "—")
+
+    avg_ret = _safe_float(p.get("AvgReturnPct"))
+    k4.metric("Avg Return %", f"{avg_ret:.2f}%" if avg_ret is not None else "—")
 else:
     st.info(f"Performance summary not available. ({perf_status})")
 

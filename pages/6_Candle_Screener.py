@@ -46,12 +46,19 @@ with st.sidebar:
 # ──────────────────────────────────────────────
 if st.sidebar.button("Run Screener"):
     with st.spinner(f"Running Candle Screener for {selected_date}..."):
+        # The stored proc does INSERT/UPDATE and may not return a result set.
+        # First, execute the proc:
         df, status = run_stored_proc(
             "dbo.sp_Screener_Candles_Strategy_Run",
             {"RunDate": str(selected_date)},
         )
 
-    if df is not None and not df.empty:
+        # If the proc returned data, use it directly.
+        # If not ("No results" / empty), the proc ran successfully but is
+        # an action proc — show a success message instead of an error.
+        has_data = df is not None and not df.empty
+
+    if has_data:
         st.success(f"Screener completed — {status}")
 
         # Summary
@@ -81,8 +88,15 @@ if st.sidebar.button("Run Screener"):
             file_name=f"candle_screener_{selected_date}.csv",
             mime="text/csv",
         )
+    elif "error" in str(status).lower():
+        st.error(f"Stored procedure failed: {status}")
     else:
-        st.warning(f"No data returned. ({status})")
+        # Proc ran but returned no result set (action proc)
+        st.success(
+            f"Candle Screener executed successfully for {selected_date}. "
+            "This procedure performs data processing and does not return a result set."
+        )
+        st.info(f"Bridge response: {status}")
 else:
     st.info("Select a date and click **Run Screener** to begin.")
 
