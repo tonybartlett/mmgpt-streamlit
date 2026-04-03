@@ -79,7 +79,10 @@ def get_api_key() -> Optional[str]:
 
 def _headers(include_auth: bool = True) -> Dict[str, str]:
     """Build request headers, optionally including the API key."""
-    h: Dict[str, str] = {"Accept": "application/json"}
+    h: Dict[str, str] = {
+        "Accept": "application/json",
+        "ngrok-skip-browser-warning": "true",   # bypass ngrok free-tier interstitial
+    }
     if include_auth:
         key = get_api_key()
         if key:
@@ -106,6 +109,9 @@ def _get(
     url = f"{get_base_url()}{path}"
     try:
         r = _requests.get(url, headers=_headers(include_auth=auth), timeout=timeout)
+        ct = r.headers.get("content-type", "")
+        if "application/json" not in ct:
+            return None
         r.raise_for_status()
         return r.json()
     except Exception:
@@ -127,7 +133,12 @@ def _post(
         return None
     url = f"{get_base_url()}{path}"
     try:
-        r = _requests.post(url, json=payload, headers=_headers(include_auth=auth), timeout=timeout)
+        headers = _headers(include_auth=auth)
+        headers["Content-Type"] = "application/json"
+        r = _requests.post(url, json=payload, headers=headers, timeout=timeout)
+        ct = r.headers.get("content-type", "")
+        if "application/json" not in ct:
+            return None
         r.raise_for_status()
         return r.json()
     except Exception:
@@ -231,6 +242,16 @@ def check_all_endpoints(timeout: int = 10) -> Dict[str, Dict[str, Any]]:
             r = _requests.get(url, headers=headers, timeout=timeout)
             latency_ms = (time.perf_counter() - t0) * 1000
             ok = r.status_code < 400
+            ct = r.headers.get("content-type", "")
+            if "application/json" not in ct:
+                results[path] = {
+                    "ok": False,
+                    "latency_ms": round(latency_ms, 1),
+                    "response": {"raw": r.text[:200]},
+                    "error": f"Non-JSON response (content-type: {ct})",
+                    "status_code": r.status_code,
+                }
+                continue
             try:
                 resp = r.json()
             except Exception:

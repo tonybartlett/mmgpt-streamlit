@@ -5,6 +5,7 @@ Connection strategy (in order):
   1. Supervisor API bridge  (reads [bridge] section from st.secrets)
   2. Direct pyodbc          (local VM only — Windows Auth)
 
+data_source.py reads st.secrets["bridge"] directly — no env var injection needed.
 A clear banner at the top shows which mode is active.
 """
 
@@ -24,6 +25,7 @@ if APP_DIR not in sys.path:
     sys.path.insert(0, APP_DIR)
 
 import bridge_client
+import data_source
 from mmgpt_queries import (
     get_latest_run_date,
     get_pipeline_counts,
@@ -51,7 +53,6 @@ def _probe_bridge() -> bool:
 
 bridge_online = _probe_bridge()
 
-# Determine the connection label shown in the UI
 if bridge_online:
     _conn_mode   = "bridge"
     _conn_label  = "Supervisor API Bridge"
@@ -64,17 +65,6 @@ else:
     _conn_colour = "info"
 
 
-# ── inject bridge URL into data_source so mmgpt_queries uses the right path ──
-# data_source.py reads MMGPT_SQL_BRIDGE_URL from env; we set it here so the
-# existing query functions pick up the secrets-configured URL automatically.
-if bridge_online:
-    _bridge_url = bridge_client.get_base_url()
-    os.environ["MMGPT_SQL_BRIDGE_URL"] = _bridge_url
-    _api_key = bridge_client.get_api_key()
-    if _api_key:
-        os.environ["BRIDGE_API_KEY"] = _api_key
-
-
 # ═══════════════════════════════════════════════════════════════════════════
 #  2.  Header
 # ═══════════════════════════════════════════════════════════════════════════
@@ -82,7 +72,6 @@ if bridge_online:
 st.title("MMGPT Supervisor Dashboard")
 st.caption("Production — Stock Master Default  ·  MMGPTVM\\ASXSQLDATA")
 
-# ── Connection mode banner ────────────────────────────────────────────────
 if _conn_colour == "success":
     st.success(
         f"{_conn_icon}  **Connection mode: {_conn_label}**  ·  "
@@ -212,7 +201,38 @@ st.divider()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  7.  Footer
+#  7.  Debug / Diagnostics sidebar
+# ═══════════════════════════════════════════════════════════════════════════
+
+with st.sidebar:
+    with st.expander("Connection Diagnostics", expanded=False):
+        diag = data_source.get_diag()
+        st.markdown("**data_source.py config:**")
+        st.json(diag)
+
+        st.markdown("**bridge_client.py config:**")
+        st.json({
+            "base_url": bridge_client.get_base_url(),
+            "api_key_set": bridge_client.get_api_key() is not None,
+            "ping_result": "OK" if bridge_online else "FAIL",
+        })
+
+        st.markdown("**Secrets check:**")
+        try:
+            b = st.secrets["bridge"]
+            st.success(f"[bridge] section found: base_url={b['base_url'][:40]}...")
+        except Exception as e:
+            st.error(f"[bridge] section missing: {e}")
+
+        try:
+            s = st.secrets["sql"]
+            st.info(f"[sql] section found: server={s['server']}")
+        except Exception:
+            st.warning("[sql] section not found")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  8.  Footer
 # ═══════════════════════════════════════════════════════════════════════════
 
 st.caption(
