@@ -1,0 +1,84 @@
+// ============================================================
+// MMGPT TradingView → Bridge Webhook Alert Template
+// Version: 1.0  |  Pine Script v5
+// ============================================================
+//
+// INSTRUCTIONS:
+// 1. Copy this script into TradingView Pine Script Editor
+// 2. Click "Save" then "Add to chart"
+// 3. Create an Alert on this indicator/strategy
+// 4. Set the Webhook URL to:
+//    https://nonsymbolic-londyn-nonfacetiously.ngrok-free.dev/tradingview/webhook?token=TV_7039840724932504
+// 5. Set the Alert Message to the JSON block shown in the alert() call below
+//
+// CUSTOMISATION:
+// - Replace the MA crossover logic with your own strategy conditions
+// - Adjust the "score" value to reflect your signal strength metric
+// - The "strategy" field maps to the Strategy column in dbo.Signals_Inbox
+//
+// ============================================================
+
+//@version=5
+strategy(
+    title       = "MMGPT Signal Bridge — MA Crossover Demo",
+    shorttitle  = "MMGPT-TV",
+    overlay     = true,
+    default_qty_type  = strategy.percent_of_equity,
+    default_qty_value = 2
+)
+
+// ── Inputs ────────────────────────────────────────────────────────────────────
+fast_len = input.int(9,  title="Fast MA Length", minval=1)
+slow_len = input.int(21, title="Slow MA Length", minval=1)
+strategy_name = input.string("MACrossover", title="Strategy Name (sent to MMGPT)")
+
+// ── Indicators ────────────────────────────────────────────────────────────────
+fast_ma = ta.ema(close, fast_len)
+slow_ma = ta.ema(close, slow_len)
+
+plot(fast_ma, color=color.blue,  linewidth=1, title="Fast EMA")
+plot(slow_ma, color=color.orange, linewidth=1, title="Slow EMA")
+
+// ── Signal conditions ─────────────────────────────────────────────────────────
+long_signal  = ta.crossover(fast_ma, slow_ma)
+short_signal = ta.crossunder(fast_ma, slow_ma)
+
+// ── Strategy entries (for backtesting) ────────────────────────────────────────
+if long_signal
+    strategy.entry("Long", strategy.long, comment="BUY")
+
+if short_signal
+    strategy.close("Long", comment="SELL")
+
+// ── Webhook alert payload ─────────────────────────────────────────────────────
+//
+// IMPORTANT: When creating the TradingView Alert, paste the JSON below
+// into the "Message" field EXACTLY as shown.
+// TradingView will substitute the {{placeholders}} at alert time.
+//
+// Webhook URL:
+//   https://nonsymbolic-londyn-nonfacetiously.ngrok-free.dev/tradingview/webhook?token=TV_7039840724932504
+//
+// Alert Message (paste this into TradingView Alert → Message box):
+// {
+//   "ticker": "{{ticker}}",
+//   "strategy": "MACrossover",
+//   "action": "{{strategy.order.action}}",
+//   "price": {{close}},
+//   "score": {{strategy.position_size}},
+//   "note": "TV alert at {{timenow}} | bar_index={{bar_index}}"
+// }
+
+// BUY alert
+if long_signal
+    alert(
+        '{"ticker":"' + syminfo.ticker + '","strategy":"' + strategy_name + '","action":"BUY","price":' + str.tostring(close, "#.####") + ',"score":' + str.tostring(strategy.position_size, "#.##") + ',"note":"TV BUY signal at ' + str.tostring(timenow) + '"}',
+        alert.freq_once_per_bar_close
+    )
+
+// SELL alert
+if short_signal
+    alert(
+        '{"ticker":"' + syminfo.ticker + '","strategy":"' + strategy_name + '","action":"SELL","price":' + str.tostring(close, "#.####") + ',"score":' + str.tostring(strategy.position_size, "#.##") + ',"note":"TV SELL signal at ' + str.tostring(timenow) + '"}',
+        alert.freq_once_per_bar_close
+    )
